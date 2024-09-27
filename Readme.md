@@ -25,7 +25,8 @@ Table of contents
 4. [Execution of Migration Scripts](#execution)
     1. [Startup Hook](#startupHook)
     2. [Install Hook](#installHook)
-    2. [Manual Execution](#manualExecution)
+    3. [Manual Execution](#manualExecution)
+    4. [Execution Details](#executionDetails)
 5. [History of Past Runs](#history)
 6. [Extension to Groovy Console](#groovy)
     1. [Content Upgrades](#content_upgrades)
@@ -58,16 +59,21 @@ AECU requires Java 8 and AEM 6.5 or AEM Cloud. For older AEM versions see below.
 
 | AEM Version   | Groovy Console | AECU      |
 | ------------- | -------------- | --------- |
-| 6.5 (>=6.5.3)<br/>Cloud | included     | 6.x, 5.x |
+| 6.5 (>=6.5.13)<br/>Cloud  | included | 6.x, 5.x   |
+| 6.5 (>=6.5.3 && < 6.5.13) | included | 6.0.1, 5.x |
+
 
 ## Older AEM versions
 For AEM 6.3/6.4 please see here what versions are compatible. Groovy Console can be installed manually if [bundle install](#bundleInstall) is not used.
 
-| AEM Version   | Groovy Console | AECU      |
-| ------------- | -------------- | --------- |
-| 6.5 (>=6.5.3) | 16.x <br/>14.x, 13.x     | 4.x<br/> 3.x, 2.x |
-| 6.4           | 14.x, 13.x               | 3.x, 2.x          |
-| 6.3           | 12.x                     | 1.x               |
+| AEM Version               | Groovy Console           | AECU              |
+| -------------             | --------------           | ---------         |
+| 6.5 (>=6.5.3)             | 16.x <br/>14.x, 13.x     | 4.x<br/> 3.x, 2.x |
+| 6.4                       | 14.x, 13.x               | 3.x, 2.x          |
+| 6.3                       | 12.x                     | 1.x               |
+
+### AEM 6.5 and Java 11
+For AEM 6.5 and Java 11 make sure to edit the sling.properties file and add `org.osgi.framework.bootdelegation=sun.*,com.sun.*,jdk.internal.reflect,jdk.internal.reflect.*` to avoid a NoClassDefFoundError, see [FELIX-6184](https://issues.apache.org/jira/browse/FELIX-6184) & [Adobe Documantation](https://experienceleague.adobe.com/docs/experience-manager-65/deploying/deploying/troubleshooting.html?lang=en#the-website-does-not-load-or-fails-intermittently-with-java11) for details.
 
 <a name="installation"></a>
 
@@ -157,6 +163,10 @@ Then delete "aem-groovy-console" packages in package manager.
 
 
 <a name="structure"></a>
+
+## Upgrade from version lower than 5.0.0 (On Premise)
+
+The index was moved from /var/aecu to /oak:index for cloud compatibility reasons, please remove the /var/aecu/oak:index/aecuHistory to avoid duplicate index definitions
 
 # File and Folder Structure
 
@@ -253,6 +263,17 @@ Execution is done in two simple steps:
 Once execution is done you will see if the script(s) succeeded. Click on the history link to see the details.
 
 <img src="docs/images/run.png">
+
+<a name="executionDetails"></a>
+
+## Execution Details and Output
+When executing, `de.valtech.aecu.core.service.AecuServiceImpl` will emit a log statement to inform script is currently being executed, and when execution is done, a second log statement including the result (success, failure, skipped if prechecks failed) is emitted.
+To capture these logs, configure a logger on `de.valtech.aecu` with level `INFO` to append/emit logs as you desire.
+These logs are helpful if you are executing scripts via hook.
+
+Additionally, as stated above, manual execution provides the UI to indicate which script is currently running. Please note however that if you leave the page while execution is in progress, you will not be able to go back to it to see the execution details again.
+
+In both cases, you can see more details on the execution in the history. See below for more information.
 
 <a name="history"></a>
 
@@ -466,6 +487,26 @@ aecu.contentUpgradeBuilder()
         .filterWith(new NOTFilter(new FilterByPathRegex(".*jcr:content.*")))
         .doSetProperty("name", "value")
         .run()        
+```
+
+#### Filter with custom FilterBy implementation
+
+To filter by complex conditions that are not covered by existing `filterBy...()` presets you can use `filterWith()` that takes a custom `FilterBy` implementation as shown in the example below:
+
+```java
+aecu.contentUpgradeBuilder()
+        .forDescendantResourcesOf("/content/we-retail/ca/en", false)
+        .filterWith(new FilterBy(){
+            public boolean filter(Resource resource, StringBuilder output) {
+                ValueMap properties = resource.valueMap
+                Calendar lastModified = properties.get("cq:lastModified", Calendar.class)
+                Calendar cal = Calendar.instance
+                cal.add(Calendar.YEAR, -5)
+                return lastModified.time.before(cal.time)
+            }
+        })
+        .doSetProperty("old", true) // mark pages that weren't modified in the past 5 years
+        .run()   
 ```
 
 <a name="binding_execute"></a>
